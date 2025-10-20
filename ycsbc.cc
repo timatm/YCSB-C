@@ -16,6 +16,7 @@
 #include "core/client.h"
 #include "core/core_workload.h"
 #include "db/db_factory.h"
+#include <gem5/m5ops.h> 
 
 using namespace std;
 
@@ -73,12 +74,29 @@ int main(const int argc, const char *argv[]) {
   // Peforms transactions
   actual_ops.clear();
   total_ops = stoi(props[ycsbc::CoreWorkload::OPERATION_COUNT_PROPERTY]);
-  utils::Timer<double> timer;
+
+  // utils::sanity_timer_200ms();
+  utils::PortableTimer::Sanity200ms();   // 打印一下；若仍为 0，说明只能走 fallback
+
+  utils::PortableTimer timer;
+  m5_reset_stats(0, 0);
+  // utils::MonotonicTimer timer;
   timer.Start();
   for (int i = 0; i < num_threads; ++i) {
     actual_ops.emplace_back(async(launch::async,
         DelegateClient, db, &wl, total_ops / num_threads, false));
   }
+
+
+
+  // actual_ops.clear();
+  // total_ops = stoi(props[ycsbc::CoreWorkload::OPERATION_COUNT_PROPERTY]);
+  // utils::Timer timer;
+  // timer.Start();
+  // for (int i = 0; i < num_threads; ++i) {
+  //   actual_ops.emplace_back(async(launch::async,
+  //       DelegateClient, db, &wl, total_ops / num_threads, false));
+  // }
   assert((int)actual_ops.size() == num_threads);
 
   sum = 0;
@@ -87,9 +105,18 @@ int main(const int argc, const char *argv[]) {
     sum += n.get();
   }
   double duration = timer.End();
-  cerr << "# Transaction throughput (KTPS)" << endl;
-  cerr << props["dbname"] << '\t' << file_name << '\t' << num_threads << '\t';
-  cerr << total_ops / duration / 1000 << endl;
+  m5_dump_stats(0, 0);
+  double ktps = (duration > 0.0) ? (static_cast<double>(sum) / duration / 1000.0) : 0.0;
+
+  cerr.setf(std::ios::fixed);
+  cerr.precision(3);
+  cerr << "# Transaction throughput (KTPS)\n";
+  cerr << props["dbname"] << '\t' << file_name << '\t' << num_threads << '\t' << ktps << '\n';
+
+  cerr << "total_ops: " << sum << '\n';  // 打印“实际完成”的操作数
+  cerr.precision(6);
+  cerr << "duration: " << duration << " s\n";
+
 }
 
 string ParseCommandLine(int argc, const char *argv[], utils::Properties &props) {
