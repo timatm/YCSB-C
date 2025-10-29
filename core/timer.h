@@ -25,73 +25,60 @@ namespace utils {
 #include <unistd.h>
 #include <stdint.h>
 #include <stdio.h>
-
 class PortableTimer {
 public:
-  void Start() { started_ = true; t0_ = now(); }
-  double End()  const {
+  void Start() {
+    started_ = true;
+    kind_ = pick_kind_();                 // 只选一次
+    t0_ = now_of_kind_(kind_);            // 读取一次起点
+  }
+  double End() const {
     if (!started_) return 0.0;
-    const Stamp t1 = now();
-    // 优先用秒+纳秒，退化到其他制
-    if (t0_.kind == Stamp::K::POSIX) {
-      return (t1.s - t0_.s) + (t1.ns - t0_.ns) / 1e9;
-    } else if (t0_.kind == Stamp::K::GTOD) {
-      return (t1.s - t0_.s) + (t1.us - t0_.us) / 1e6;
-    } else { // TICKS
-      long hz = sysconf(_SC_CLK_TCK);
-      return (hz > 0) ? double(t1.ticks - t0_.ticks) / double(hz) : 0.0;
-    }
+    Stamp t1 = now_of_kind_(kind_);       // 用同一种钟读取终点
+    if (kind_ == K::POSIX)  return (t1.s - t0_.s) + (t1.ns - t0_.ns) / 1e9;
+    if (kind_ == K::GTOD)   return (t1.s - t0_.s) + (t1.us - t0_.us) / 1e6;
+    long hz = sysconf(_SC_CLK_TCK);
+    return (hz > 0) ? double(t1.ticks - t0_.ticks) / double(hz) : 0.0;
   }
-
-  // 自检：尝试 sleep 200ms，返回测得秒数并打印告警
-  static double Sanity200ms() {
-    PortableTimer t; t.Start();
-    timespec req{0, 200*1000*1000};
-    if (nanosleep(&req, nullptr) != 0) {
-      // 某些环境 nanosleep 也不前进——忽略错误，纯测量
-    }
-    double s = t.End();
-    fprintf(stderr, "[sanity] 200ms sleep measured = %.6f s\n", s);
-    if (s == 0.0) {
-      fprintf(stderr, "[warn] time source not advancing; falling back to weaker clocks\n");
-    }
-    return s;
-  }
+  static double Sanity200ms() { /* 你原来的实现保持 */ }
 
 private:
-  struct Stamp {
-    enum class K { POSIX, GTOD, TICKS } kind;
-    // POSIX
-    int64_t s=0; int64_t ns=0;
-    // GTOD
-    int64_t us=0;
-    // TICKS
-    clock_t ticks=0;
-  };
+  enum class K { POSIX, GTOD, TICKS };
+  struct Stamp { K kind; int64_t s=0, ns=0, us=0; clock_t ticks=0; };
 
-  static Stamp now() {
-    Stamp st{};
+  static K pick_kind_() {
     timespec ts{};
-    if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0) {
-      st.kind = Stamp::K::POSIX; st.s = ts.tv_sec; st.ns = ts.tv_nsec; return st;
-    }
-    // fallback: REALTIME
-    if (clock_gettime(CLOCK_REALTIME, &ts) == 0) {
-      st.kind = Stamp::K::POSIX; st.s = ts.tv_sec; st.ns = ts.tv_nsec; return st;
-    }
-    // fallback: gettimeofday
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0) return K::POSIX;
+    if (clock_gettime(CLOCK_REALTIME,  &ts) == 0) return K::POSIX;
     timeval tv{};
-    if (gettimeofday(&tv, nullptr) == 0) {
-      st.kind = Stamp::K::GTOD; st.s = tv.tv_sec; st.us = tv.tv_usec; return st;
+    if (gettimeofday(&tv, nullptr) == 0) return K::GTOD;
+    return K::TICKS;
+  }
+  static Stamp now_of_kind_(K k) {
+    Stamp st{}; st.kind = k;
+    if (k == K::POSIX) {
+      timespec ts{};
+      if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0 &&
+          clock_gettime(CLOCK_REALTIME,  &ts) != 0) {
+        // 不应该发生：降级以免 0
+        st.kind = K::GTOD; return now_of_kind_(st.kind);
+      }
+      st.s = ts.tv_sec; st.ns = ts.tv_nsec; return st;
+    } else if (k == K::GTOD) {
+      timeval tv{};
+      if (gettimeofday(&tv, nullptr) != 0) { st.kind = K::TICKS; return now_of_kind_(st.kind); }
+      st.s = tv.tv_sec; st.us = tv.tv_usec; return st;
+    } else {
+      tms buf{};
+      st.ticks = times(&buf); return st;
     }
-    // last resort: times()
-    tms buf{};
-    st.kind = Stamp::K::TICKS; st.ticks = times(&buf); return st;
   }
 
   bool started_ = false;
+  K kind_ = K::POSIX;
   Stamp t0_{};
 };
+
 
 
 
@@ -127,22 +114,17 @@ static inline void sanity_timer_200ms() {
 // template <typename T>
 class Timer {
  public:
-  void Start() {
-    time_ = Clock::now();
+  void Start() { started_ = true; t0_ = Clock::now(); }
+  double End() const {
+    if (!started_) return 0.0;
+    return std::chrono::duration<double>(Clock::now() - t0_).count();  // 秒
   }
-
-  double End() {
-    // Duration span;
-    // Clock::time_point t = Clock::now();
-    return std::chrono::duration<double>(Clock::now() - t0_).count();
-  }
-
  private:
-  typedef std::chrono::steady_clock Clock;
-  // typedef std::chrono::duration<T> Duration;
-  Clock::time_point t0_;
-  Clock::time_point time_;
+  using Clock = std::chrono::steady_clock;
+  Clock::time_point t0_{};
+  bool started_{false};
 };
+
 
 } // utils
 

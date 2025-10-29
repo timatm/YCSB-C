@@ -16,7 +16,9 @@
 #include "core/client.h"
 #include "core/core_workload.h"
 #include "db/db_factory.h"
-#include <gem5/m5ops.h> 
+#include <iostream>
+#include <iomanip>
+// #include <gem5/m5ops.h> 
 
 using namespace std;
 
@@ -39,6 +41,15 @@ int DelegateClient(ycsbc::DB *db, ycsbc::CoreWorkload *wl, const int num_ops,
   db->Close();
   return oks;
 }
+
+static inline struct timespec ts_sub(struct timespec a, struct timespec b){
+  struct timespec d;
+  if ((a.tv_nsec -= b.tv_nsec) < 0) { a.tv_nsec += 1000000000; a.tv_sec -= 1; }
+  d.tv_sec = a.tv_sec - b.tv_sec; d.tv_nsec = a.tv_nsec;
+  return d;
+}
+
+
 
 int main(const int argc, const char *argv[]) {
   utils::Properties props;
@@ -76,10 +87,11 @@ int main(const int argc, const char *argv[]) {
   total_ops = stoi(props[ycsbc::CoreWorkload::OPERATION_COUNT_PROPERTY]);
 
   // utils::sanity_timer_200ms();
-  utils::PortableTimer::Sanity200ms();   // 打印一下；若仍为 0，说明只能走 fallback
-
+  // utils::PortableTimer::Sanity200ms();   // 打印一下；若仍为 0，说明只能走 fallback
   utils::PortableTimer timer;
-  m5_reset_stats(0, 0);
+  struct timespec t0{}, t1{};
+  if (clock_gettime(CLOCK_MONOTONIC, &t0) != 0) { perror("t0 clock_gettime"); return 1; }
+  // m5_reset_stats(0, 0);
   // utils::MonotonicTimer timer;
   timer.Start();
   for (int i = 0; i < num_threads; ++i) {
@@ -105,8 +117,35 @@ int main(const int argc, const char *argv[]) {
     sum += n.get();
   }
   double duration = timer.End();
-  m5_dump_stats(0, 0);
-  double ktps = (duration > 0.0) ? (static_cast<double>(sum) / duration / 1000.0) : 0.0;
+  if (clock_gettime(CLOCK_MONOTONIC, &t1) != 0) { perror("t1 clock_gettime"); return 1; }
+
+
+  auto ts_sub = [](timespec a, timespec b){
+    if ((a.tv_nsec -= b.tv_nsec) < 0) { a.tv_nsec += 1000000000; a.tv_sec -= 1; }
+    timespec d; d.tv_sec = a.tv_sec - b.tv_sec; d.tv_nsec = a.tv_nsec; return d;
+  };
+  timespec d = ts_sub(t1, t0);
+  unsigned long long ns = (unsigned long long)d.tv_sec * 1000000000ull
+                        + (unsigned long long)d.tv_nsec;
+
+  // 强制浮点：不要用整数链式再乘/除
+  double secs = (double)ns / 1e9;
+  double ms   = (double)ns / 1e6;
+
+
+  std::cout << "time nano second=" << ns << std::endl;
+
+  std::cout << std::fixed << std::setprecision(3)
+            << "elapsed_ms=" << (ns / 1000000.0) << " ";
+  std::cout << std::fixed << std::setprecision(6)
+            << "duration_s=" << (ns / 1000000000.0) << "\n";
+
+
+  // 用同一个 secs 算吞吐，避免“两个计时器两个结果”
+  double ktps = (secs > 0.0) ? ( (double)sum / secs / 1000.0 ) : 0.0;
+
+  // m5_dump_stats(0, 0);
+  // double ktps = (duration > 0.0) ? (static_cast<double>(sum) / duration / 1000.0) : 0.0;
 
   cerr.setf(std::ios::fixed);
   cerr.precision(3);

@@ -42,9 +42,10 @@ CXX := /home/timatm/x86_64-linux-musl-cross/bin/x86_64-linux-musl-g++
 CPPFLAGS := -I. -Idb -Icore -I/home/timatm/simplessd_fully_system/include -DENABLE_REDIS=0 -DUSE_TBB=0
 
 # 编译/链接选项
-CXXFLAGS := -std=c++11 -g -Wall -pthread
-LDFLAGS  := -static -static-libstdc++ -static-libgcc -pthread -no-pie
-LDLIBS   := /home/timatm/simplessd_fully_system/util/m5/build/x86/out/libm5.a
+CXXFLAGS := -std=c++11 -g -Wall -pthread  -mfpmath=sse -msse2 
+
+LDFLAGS  := -static -static-libstdc++ -static-libgcc -pthread -no-pie 
+# LDLIBS   := /home/timatm/simplessd_fully_system/util/m5/build/x86/out/libm5.a
 
 # 禁用的源文件（禁用 Redis 后端）
 DISABLED_SRCS := db/redis_db.cc
