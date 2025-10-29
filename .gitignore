@@ -37,5 +37,9 @@
 *.data
 *.output
 
+./
+/mydb/build/
+/mydb/build-asan/
+/mydb/build-*/
 redis/sample
 ycsbc

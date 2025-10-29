@@ -8,7 +8,7 @@
 #include <memory>
 #include <mutex>
 #include <thread>
-
+#include <atomic>
 namespace ycsbc {
 
 // 你自己的 DB “客户端句柄”，可换成你已有的 C/C++ API 封装
@@ -22,15 +22,10 @@ struct MyDbHandle {
 class MyDB : public DB {
 public:
   MyDB() = default;
-  ~MyDB() override { CleanupGlobal(); }
 
   // YCSB 会在主线程先调用 Init() 一次
   void Init() override;
 
-  // YCSB 在每个工作线程启动时会调用 InitThread()
-//   void InitThread(int thread_id, int thread_count) override;
-
-  // 操作接口
   int Read(const std::string &table, const std::string &key,
            const std::vector<std::string> *fields,
            std::vector<KVPair> &result) override;
@@ -47,15 +42,10 @@ public:
 
   int Delete(const std::string &table, const std::string &key) override;
 
-  // YCSB 在退出时会回收
-//   void Cleanup() override {}
-//   void CleanupThread(int /*thread_id*/) override {}
-  void CleanupGlobal();
+  void Close() override;
+
 
 private:
-  // 读取 ycsb 参数
-  void LoadProperties();
-
   // 每线程一个句柄：避免锁冲突
   struct ThreadLocal {
     std::unique_ptr<MyDbHandle> handle;
@@ -70,7 +60,7 @@ private:
   static thread_local std::unique_ptr<ThreadLocal> tls_;
   // 全局资源（如引擎实例）可以放这里
   std::once_flag global_init_flag_;
-//   std::atomic<bool> inited_{false};
+  std::atomic<bool> inited_{false};
 };
 
 } // namespace ycsbc

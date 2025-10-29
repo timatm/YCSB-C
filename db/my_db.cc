@@ -2,23 +2,13 @@
 #include "core/properties.h"  // YCSB 属性系统
 #include <cassert>
 #include <iostream>
-
+#include <memory>
 using namespace std;
 namespace ycsbc {
 
 thread_local std::unique_ptr<MyDB::ThreadLocal> MyDB::tls_ = nullptr;
 
-void MyDB::LoadProperties() {
-  // 从 YCSB 的全局 Properties 里拿参数：可通过 -p key=value 或 -P file 指定
-  auto &props = Properties::Get();
-  db_path_ = props.GetProperty("dbpath", "/tmp/ycsb_mydb");
-  create_if_missing_ = props.GetBoolProperty("create_if_missing", true);
-  scan_max_items_ = props.GetIntProperty("scan_max_items", 1000);
-}
-
 void MyDB::Init() {
-  LoadProperties();
-
   // 全局初始化（只做一次）
   std::call_once(global_init_flag_, [&]() {
     // TODO: 这里放你的 DB 的全局初始化，例如打开引擎、加载元数据等
@@ -27,15 +17,10 @@ void MyDB::Init() {
   });
 }
 
-void MyDB::InitThread(int /*thread_id*/, int /*thread_count*/) {
-  if (!inited_.load(std::memory_order_acquire)) Init();
-  if (!tls_) {
-    tls_ = std::make_unique<ThreadLocal>();
-    tls_->handle = std::make_unique<MyDbHandle>();
-    // TODO: 这里创建线程专属的连接/会话/写缓冲等
-    // e.g., tls_->handle->engine = engine_open_thread_local();
-  }
+void MyDB::Close(){
+  return;
 }
+
 
 int MyDB::Read(const string & /*table*/, const string &key,
                const vector<string> * /*fields*/,
@@ -94,9 +79,5 @@ int MyDB::Scan(const string & /*table*/, const string &start_key, int record_cou
   return kOK;
 }
 
-void MyDB::CleanupGlobal() {
-  // 关闭全局引擎、释放资源
-  // engine_close();
-}
 
 } // namespace ycsbc

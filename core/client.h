@@ -41,6 +41,7 @@ inline bool Client::DoInsert() {
   std::string key = workload_.NextSequenceKey();
   std::vector<DB::KVPair> pairs;
   workload_.BuildValues(pairs);
+  std::cout << "KEY: " << key << "  VALUE first: " << pairs[0].first << "  VALUE second: " << pairs[0].second << std::endl;
   return (db_.Insert(workload_.NextTable(), key, pairs) == DB::kOK);
 }
 
